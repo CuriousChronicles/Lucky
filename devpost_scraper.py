@@ -1,5 +1,5 @@
 """
-Scrapes Devpost for upcoming hackathons.
+Scrapes Devpost for upcoming and online hackathons.
 Devpost renders content with Vue.js, so we need a headless browser.
 """
 
@@ -53,10 +53,14 @@ def parse_hackathons(html):
     for card in cards:
         title_el = card.select_one("h3")
         link_el = card.select_one("a")
+        date_el = card.select_one("div.submission-period")
+        tags_el = card.select("span.theme-label")
         
         hackathons.append({
             "title": title_el.text.strip() if title_el else None,
             "url": link_el.get("href") if link_el else None,
+            "deadline": date_el.text.strip() if date_el else None,
+            "tags": [tag.text.strip() for tag in tags_el] if tags_el else None,
         })
 
     return hackathons
@@ -70,6 +74,8 @@ def main():
     for h in hackathons:
         print(f"  • {h['title']}")
         print(f"    {h['url']}\n")
+        print(f"    Submission period: {h['deadline']}")
+        print(f"    Tags: {h['tags']}\n")
 
 if __name__ == "__main__":
     main()
