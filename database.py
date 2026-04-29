@@ -33,7 +33,7 @@ def create_tables():
 
 """
 Insert a new hackathon into the database, or update an existing one
-returns True if a new hackathon was inserted, False if an existing hackathon was updated
+TODO: add logic to check if new or old event is being added
 """
 def upsert_hackathon(data: list[dict]):
     connection = get_connection()
