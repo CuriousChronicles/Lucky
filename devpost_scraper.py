@@ -1,6 +1,8 @@
 """
 Scrapes Devpost for upcoming and online hackathons.
 Devpost renders content with Vue.js, so we need a headless browser.
+
+TODO: actually check if your eligible to participate in the hackathon (some have age limit, see hackathon link)
 """
 
 from playwright.sync_api import sync_playwright
@@ -58,11 +60,15 @@ def parse_hackathons(html):
         date_el = card.select_one("div.submission-period")
         tags_el = card.select("span.theme-label")
 
+        #TODO: Need to fix start and end date. e.g Jun 6-10, 2026 is read as Jun 6 and 10, 2026 atm
         start_date = deadline = None
         if date_el:
             parts = [p.strip() for p in date_el.text.strip().split(" - ")]
             if len(parts) == 2:
                 start_date, deadline = parts
+            elif len(parts) == 1:
+                start_date = parts[0]
+                deadline = parts[0]
 
         hackathons.append({
             "url": link_el.get("href") if link_el else None,

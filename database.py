@@ -36,8 +36,11 @@ Insert a new hackathon into the database, or update an existing one
 returns True if a new hackathon was inserted, False if an existing hackathon was updated
 """
 def upsert_hackathon(data: list[dict]):
+    connection = get_connection()
     df = pd.DataFrame(data)
-    df.to_sql('events', get_connection(), if_exists='replace', index=False)
+    df.to_sql('events', connection, if_exists='replace', index=False)
+
+    connection.close()
 
 """
 Fetch all hackathons that are marked as new (is_new = 1) and return them as a list of dicts
