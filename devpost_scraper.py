@@ -5,6 +5,8 @@ Devpost renders content with Vue.js, so we need a headless browser.
 
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+import pandas as pd
+from database import upsert_hackathon
 
 URL = "https://devpost.com/hackathons?challenge_type[]=online&status[]=upcoming"
 
@@ -55,12 +57,22 @@ def parse_hackathons(html):
         link_el = card.select_one("a")
         date_el = card.select_one("div.submission-period")
         tags_el = card.select("span.theme-label")
-        
+
+        start_date = deadline = None
+        if date_el:
+            parts = [p.strip() for p in date_el.text.strip().split(" - ")]
+            if len(parts) == 2:
+                start_date, deadline = parts
+
         hackathons.append({
-            "title": title_el.text.strip() if title_el else None,
             "url": link_el.get("href") if link_el else None,
-            "deadline": date_el.text.strip() if date_el else None,
-            "tags": [tag.text.strip() for tag in tags_el] if tags_el else None,
+            "title": title_el.text.strip() if title_el else None,
+            "event_type": "hackathon",
+            "source": "devpost",
+            "deadline": deadline,
+            "start_date": start_date,
+            "location": "online",
+            "themes": ", ".join(el["title"] for el in tags_el) if tags_el else None,
         })
 
     return hackathons
@@ -75,7 +87,11 @@ def main():
         print(f"  • {h['title']}")
         print(f"    {h['url']}\n")
         print(f"    Submission period: {h['deadline']}")
-        print(f"    Tags: {h['tags']}\n")
+        print(f"    Themes: {h['themes']}\n")
+
+    # TODO: upsert hackathons into the database
+    upsert_hackathon(hackathons)
+
 
 if __name__ == "__main__":
     main()
