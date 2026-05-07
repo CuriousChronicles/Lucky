@@ -8,7 +8,6 @@ TODO: actually check if your eligible to participate in the hackathon (some have
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import pandas as pd
-from database import upsert_hackathon
 
 URL = "https://devpost.com/hackathons?challenge_type[]=online&status[]=upcoming"
 
@@ -17,7 +16,7 @@ def fetch_rendered_html(url, max_scrolls=10):
     Devpost uses infinte scrolling, so we need to scroll to the bottom.
     """
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(url)
         # Wait for the cards to actually appear in the DOM
@@ -46,12 +45,12 @@ def fetch_rendered_html(url, max_scrolls=10):
         browser.close()
     return html
 
-def parse_hackathons(html):
+def parse_hackathons(html) -> dict:
     soup = BeautifulSoup(html, "lxml")
     
     # Note: select tiles directly, not the container
     cards = soup.select("div.hackathon-tile")
-    print(f"DEBUG: found {len(cards)} cards")
+    # print(f"DEBUG: found {len(cards)} cards")
     
     hackathons = []
     for card in cards:
@@ -83,21 +82,29 @@ def parse_hackathons(html):
 
     return hackathons
 
-def main():
+def scrape_devpost() -> dict:
+    from database import upsert_hackathon
+
     print("Fetching page ...")
     html = fetch_rendered_html(URL)
     
     hackathons = parse_hackathons(html)
-    print(f"\nFound {len(hackathons)} hackathons:\n")
-    for h in hackathons:
-        print(f"  • {h['title']}")
-        print(f"    {h['url']}\n")
-        print(f"    Submission period: {h['deadline']}")
-        print(f"    Themes: {h['themes']}\n")
+    
+    # print(f"\nFound {len(hackathons)} hackathons:\n")
+    # for h in hackathons:
+    #     print(f"  • {h['title']}")
+    #     print(f"    {h['url']}\n")
+    #     print(f"    Submission period: {h['deadline']}")
+    #     print(f"    Themes: {h['themes']}\n")
 
-    # TODO: upsert hackathons into the database
     upsert_hackathon(hackathons)
+    return {"scraper": "Devpost", 
+            "total_found": len(hackathons), 
+            }
 
+def main():
+    results = scrape_devpost()
+    print(f"Devpost: found {results['total_found']}")
 
 if __name__ == "__main__":
     main()
