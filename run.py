@@ -11,6 +11,9 @@ from devpost_scraper import scrape_devpost
 
 # TODO: need to check what's already on the database and remove ones where the start date has passed
 
+import platform
+import importlib as imp
+
 # ============================================================================
 # Logging setup
 # ============================================================================
