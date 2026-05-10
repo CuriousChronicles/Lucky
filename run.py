@@ -8,11 +8,9 @@ from datetime import datetime
 from pathlib import Path
 
 from devpost_scraper import scrape_devpost
+from notifier import send_notification
 
 # TODO: need to check what's already on the database and remove ones where the start date has passed
-
-import platform
-import importlib as imp
 
 # ============================================================================
 # Logging setup
@@ -41,6 +39,28 @@ SCRAPERS = [
     ("devpost", scrape_devpost),
 ]
 
+# ============================================================================
+# Helper Function
+# ============================================================================
+def notify_run_complete(results, total_tiles, failed):
+    """Send a phone notification summarizing the run."""
+    if failed:
+        send_notification(
+            title="Jarvis run completed with errors",
+            message=f"{len(results)} scapers. "
+                    f"{len(failed)} scraper(s) failed — check the logs.",
+            priority="default",
+            tags=["warning"],
+        )
+    else:
+        # Clean run
+        send_notification(
+            title="Jarvis run complete",
+            message=f"Scraped {len(results)} sites."
+                    f"Found {total_tiles} tiles",
+            priority="default",
+            tags=["white_check_mark"],
+        )
 
 def run_all():
     """Run every scraper. One failure doesn't stop the others."""
@@ -79,6 +99,8 @@ def run_all():
     else:
         log.info(f"  Errors      : none")
     log.info("=" * 60)
+
+    notify_run_complete(results, total_tiles, failed)
 
     return results
 
