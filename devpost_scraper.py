@@ -2,7 +2,8 @@
 Scrapes Devpost for upcoming and online hackathons.
 Devpost renders content with Vue.js, so we need a headless browser.
 
-TODO: actually check if your eligible to participate in the hackathon (some have age limit, see hackathon link)
+TODO: 
+- actually check if your eligible to participate in the hackathon (some have age limit, see hackathon link)
 """
 
 from datetime import datetime
@@ -109,6 +110,13 @@ def parse_hackathons(html) -> dict:
 
         start_date, deadline = parse_date_range(date_el.text if date_el else None)
 
+        if deadline:
+            try:
+                if datetime.strptime(deadline, "%d/%m/%Y") < datetime.today():
+                    continue
+            except ValueError:
+                pass
+
         hackathons.append({
             "url": link_el.get("href") if link_el else None,
             "title": title_el.text.strip() if title_el else None,
@@ -123,7 +131,10 @@ def parse_hackathons(html) -> dict:
     return hackathons
 
 def scrape_devpost() -> dict:
-    from database import upsert_hackathon
+    from database import upsert_hackathon, remove_expired_events
+    print("checking for expired events")
+    count = remove_expired_events()
+    print(F"{count} event{'s' if count != 1 else ''} {"was" if count == 1 else "were"} removed")
 
     print("Fetching page ...")
     html = fetch_rendered_html(URL)
