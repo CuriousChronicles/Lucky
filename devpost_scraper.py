@@ -5,11 +5,59 @@ Devpost renders content with Vue.js, so we need a headless browser.
 TODO: actually check if your eligible to participate in the hackathon (some have age limit, see hackathon link)
 """
 
+from datetime import datetime
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import pandas as pd
 
 URL = "https://devpost.com/hackathons?challenge_type[]=online&status[]=upcoming"
+
+
+def parse_date_range(date_str: str) -> tuple[str | None, str | None]:
+    """
+    Parse Devpost date range strings into (start_date, deadline) as DD/MM/YYYY.
+
+    Handles three formats from Devpost:
+      "Apr 09 - May 20, 2026"       -- cross-month range
+      "May 01 - 31, 2026"           -- same-month range (right side has no month)
+      "May 20, 2026"                -- single day
+      "May 01, 2026 - Jun 18, 2027" -- cross-year rnage
+    """
+    if not date_str:
+        return None, None
+
+    parts = [p.strip() for p in date_str.strip().split(" - ")]
+
+    if len(parts) == 1:
+        try:
+            d = datetime.strptime(parts[0], "%b %d, %Y")
+            formatted = d.strftime("%d/%m/%Y")
+            return formatted, formatted
+        except ValueError:
+            return None, None
+
+    left, right = parts
+
+    try:
+        # Case 1: right is a full date — "May 20, 2026"
+        end = datetime.strptime(right, "%b %d, %Y")
+    except ValueError:
+        # Case 2: right is day+year only — "31, 2026"; borrow month from left
+        month = left.split()[0]
+        try:
+            end = datetime.strptime(f"{month} {right}", "%b %d, %Y")
+        except ValueError:
+            return None, None
+
+    try:
+        start = datetime.strptime(left, "%b %d, %Y")
+    except ValueError:
+        try:
+            start = datetime.strptime(f"{left}, {end.year}", "%b %d, %Y")
+        except ValueError:
+            return None, None
+
+    return start.strftime("%d/%m/%Y"), end.strftime("%d/%m/%Y")
 
 def fetch_rendered_html(url, max_scrolls=10):
     """Use a headless browser to load the page and let JS run.
@@ -59,15 +107,7 @@ def parse_hackathons(html) -> dict:
         date_el = card.select_one("div.submission-period")
         tags_el = card.select("span.theme-label")
 
-        #TODO: Need to fix start and end date. e.g Jun 6-10, 2026 is read as Jun 6 and 10, 2026 atm
-        start_date = deadline = None
-        if date_el:
-            parts = [p.strip() for p in date_el.text.strip().split(" - ")]
-            if len(parts) == 2:
-                start_date, deadline = parts
-            elif len(parts) == 1:
-                start_date = parts[0]
-                deadline = parts[0]
+        start_date, deadline = parse_date_range(date_el.text if date_el else None)
 
         hackathons.append({
             "url": link_el.get("href") if link_el else None,

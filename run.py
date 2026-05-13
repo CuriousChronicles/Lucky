@@ -56,7 +56,7 @@ def notify_run_complete(results, total_tiles, failed):
         # Clean run
         send_notification(
             title="Jarvis run complete",
-            message=f"Scraped {len(results)} sites."
+            message=f"Scraped {len(results)} sites. "
                     f"Found {total_tiles} tiles",
             priority="default",
             tags=["white_check_mark"],
@@ -68,6 +68,8 @@ def run_all():
 
     log.info("=" * 60)
     log.info(f"Lucky run started - {run_start:%Y-%m-%d %H:%M:%S}")
+
+    # TODO: Remove old events from database
 
     results = []
 
@@ -99,6 +101,7 @@ def run_all():
     else:
         log.info(f"  Errors      : none")
     log.info("=" * 60)
+
 
     notify_run_complete(results, total_tiles, failed)
 

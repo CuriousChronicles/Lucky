@@ -37,6 +37,10 @@ TODO: add logic to check if new or old event is being added
 """
 def upsert_hackathon(data: list[dict]):
     connection = get_connection()
+
+    # Go through database and change everything 'is_new' to 0
+    
+
     df = pd.DataFrame(data)
     df.to_sql('events', connection, if_exists='replace', index=False)
 
