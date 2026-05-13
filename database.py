@@ -1,17 +1,24 @@
 """
-This is the database for Lucky. 
+This is the database for Lucky.
 """
 import sqlite3
 from datetime import datetime
-import pandas as pd
+from pathlib import Path
+
+DB_PATH = Path(__file__).parent / "lucky.db"
 
 def get_connection():
-    connection = sqlite3.connect('lucky.db')
-    return connection
+    return sqlite3.connect(DB_PATH)
 
 def create_tables():
     connection = get_connection()
     cursor = connection.cursor()
+
+    # If the table exists without url as PRIMARY KEY, drop and recreate it
+    cursor.execute("PRAGMA table_info(events)")
+    columns = {row[1]: row[5] for row in cursor.fetchall()}  # {name: is_pk}
+    if columns and columns.get("url", 0) != 1:
+        cursor.execute("DROP TABLE events")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS events (
@@ -31,17 +38,36 @@ def create_tables():
     connection.close()
     print("Database tables created successfully.")
 
-"""
-Insert a new hackathon into the database, or update an existing one
-TODO: add logic to check if new or old event is being added
-"""
-def upsert_hackathon(data: list[dict]):
+def upsert_hackathon(data: list[dict]) -> int:
+    """Insert new events (is_new=1) or refresh metadata for existing ones (is_new unchanged).
+    Returns the number of genuinely new events inserted."""
+    create_tables()
     connection = get_connection()
+    cursor = connection.cursor()
 
-    df = pd.DataFrame(data)
-    df.to_sql('events', connection, if_exists='replace', index=False)
+    incoming_urls = [row["url"] for row in data if row.get("url")]
+    if incoming_urls:
+        placeholders = ",".join("?" * len(incoming_urls))
+        cursor.execute(f"SELECT url FROM events WHERE url IN ({placeholders})", incoming_urls)
+        existing_urls = {row[0] for row in cursor.fetchall()}
+    else:
+        existing_urls = set()
 
+    new_count = sum(1 for url in incoming_urls if url not in existing_urls)
+
+    cursor.executemany("""
+        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes)
+        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes)
+        ON CONFLICT(url) DO UPDATE SET
+            title      = excluded.title,
+            deadline   = excluded.deadline,
+            start_date = excluded.start_date,
+            themes     = excluded.themes
+    """, data)
+
+    connection.commit()
     connection.close()
+    return new_count
 
 def remove_expired_events() -> int:
     "Remove events whose start date has already passed. The function removes the number of events removed"
@@ -74,11 +100,12 @@ def _before_today(start_date:str, today: datetime) -> bool:
     except ValueError:
         return False
 
-"""
-Fetch all hackathons that are marked as new (is_new = 1) and return them as a list of dicts
-"""
 def get_new_hackathons() -> list[dict]:
-    pass
-
-if __name__ == "__main__":
-    create_tables()
+    """Return all events marked as new (is_new=1) as a list of dicts."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute("SELECT * FROM events WHERE is_new = 1")
+    columns = [col[0] for col in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    connection.close()
+    return rows

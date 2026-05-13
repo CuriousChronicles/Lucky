@@ -110,9 +110,9 @@ def parse_hackathons(html) -> dict:
 
         start_date, deadline = parse_date_range(date_el.text if date_el else None)
 
-        if deadline:
+        if start_date:
             try:
-                if datetime.strptime(deadline, "%d/%m/%Y") < datetime.today():
+                if datetime.strptime(start_date, "%d/%m/%Y") < datetime.today():
                     continue
             except ValueError:
                 pass
@@ -132,9 +132,6 @@ def parse_hackathons(html) -> dict:
 
 def scrape_devpost() -> dict:
     from database import upsert_hackathon, remove_expired_events
-    print("checking for expired events")
-    count = remove_expired_events()
-    print(F"{count} event{'s' if count != 1 else ''} {"was" if count == 1 else "were"} removed")
 
     print("Fetching page ...")
     html = fetch_rendered_html(URL)
@@ -148,10 +145,12 @@ def scrape_devpost() -> dict:
     #     print(f"    Submission period: {h['deadline']}")
     #     print(f"    Themes: {h['themes']}\n")
 
-    upsert_hackathon(hackathons)
-    return {"scraper": "Devpost", 
-            "total_found": len(hackathons), 
-            }
+    new_count = upsert_hackathon(hackathons)
+    return {
+        "scraper": "Devpost",
+        "total_found": len(hackathons),
+        "new_found": new_count,
+    }
 
 def main():
     results = scrape_devpost()

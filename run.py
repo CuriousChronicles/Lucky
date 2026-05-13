@@ -7,10 +7,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from database import remove_expired_events
 from devpost_scraper import scrape_devpost
 from notifier import send_notification
 
-# TODO: need to check what's already on the database and remove ones where the start date has passed
+# TODO: 
+# - Be able to know how many new events were found today 
 
 # ============================================================================
 # Logging setup
@@ -39,25 +41,20 @@ SCRAPERS = [
     ("devpost", scrape_devpost),
 ]
 
-# ============================================================================
-# Helper Function
-# ============================================================================
-def notify_run_complete(results, total_tiles, failed):
+
+def notify_run_complete(results, total_tiles, total_new, failed):
     """Send a phone notification summarizing the run."""
     if failed:
         send_notification(
-            title="Jarvis run completed with errors",
-            message=f"{len(results)} scapers. "
-                    f"{len(failed)} scraper(s) failed — check the logs.",
+            title="Lucky run completed with errors",
+            message=f"{len(failed)} scraper(s) failed — check the logs.",
             priority="default",
             tags=["warning"],
         )
     else:
-        # Clean run
         send_notification(
-            title="Jarvis run complete",
-            message=f"Scraped {len(results)} sites. "
-                    f"Found {total_tiles} tiles",
+            title="Lucky run complete",
+            message=f"{total_new} new events found ({total_tiles} total across {len(results)} sites).",
             priority="default",
             tags=["white_check_mark"],
         )
@@ -69,7 +66,9 @@ def run_all():
     log.info("=" * 60)
     log.info(f"Lucky run started - {run_start:%Y-%m-%d %H:%M:%S}")
 
-    # TODO: Remove old events from database
+    log.info("[database] Checking for expired events...")
+    count = remove_expired_events()
+    log.info(F"  {count} event{'s' if count != 1 else ''} {"was" if count == 1 else "were"} removed")
 
     results = []
 
@@ -80,7 +79,8 @@ def run_all():
             result = scraper_fn()
             elapsed = (datetime.now() - scraper_start).total_seconds()
             tiles = result.get("total_found", 0)
-            log.info(f"[{name}] Done - {tiles} tiles found in {elapsed:.1f}s")
+            new = result.get("new_found", 0)
+            log.info(f"[{name}] Done - {tiles} tiles found ({new} new) in {elapsed:.1f}s")
             results.append(result)
         except Exception as e:
             elapsed = (datetime.now() - scraper_start).total_seconds()
@@ -90,11 +90,12 @@ def run_all():
     # Summary
     total_elapsed = (datetime.now() - run_start).total_seconds()
     total_tiles = sum(r.get("total_found", 0) for r in results)
+    total_new = sum(r.get("new_found", 0) for r in results)
     failed = [r["scraper"] for r in results if "error" in r]
 
     log.info("-" * 60)
     log.info(f"Run finished in {total_elapsed:.1f}s")
-    log.info(f"  Tiles found : {total_tiles}")
+    log.info(f"  Tiles found : {total_tiles} ({total_new} new)")
     log.info(f"  Scrapers run: {len(results)}")
     if failed:
         log.error(f"  Failed      : {', '.join(failed)}")
@@ -103,7 +104,7 @@ def run_all():
     log.info("=" * 60)
 
 
-    notify_run_complete(results, total_tiles, failed)
+    notify_run_complete(results, total_tiles, total_new, failed)
 
     return results
 
