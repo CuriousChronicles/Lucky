@@ -30,7 +30,7 @@ def create_tables():
             start_date TEXT,
             location TEXT,
             themes TEXT,
-            is_new INTEGER NOT NULL DEFAULT 1
+            is_new INTEGER NOT NULL DEFAULT 0
         )
     """)
 
@@ -41,7 +41,6 @@ def create_tables():
 def upsert_hackathon(data: list[dict]) -> int:
     """Insert new events (is_new=1) or refresh metadata for existing ones (is_new unchanged).
     Returns the number of genuinely new events inserted."""
-    create_tables()
     connection = get_connection()
     cursor = connection.cursor()
 
@@ -55,15 +54,23 @@ def upsert_hackathon(data: list[dict]) -> int:
 
     new_count = sum(1 for url in incoming_urls if url not in existing_urls)
 
+    rows = [
+        {**row, "is_new": 0 if row.get("url") in existing_urls else 1}
+        for row in data
+    ]
+
     cursor.executemany("""
-        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes)
-        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes)
+        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes, is_new)
+        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes, :is_new)
         ON CONFLICT(url) DO UPDATE SET
             title      = excluded.title,
+            event_type = excluded.event_type,
+            source     = excluded.source,
             deadline   = excluded.deadline,
             start_date = excluded.start_date,
+            location   = excluded.location,
             themes     = excluded.themes
-    """, data)
+    """, rows)
 
     connection.commit()
     connection.close()
@@ -92,7 +99,7 @@ def remove_expired_events() -> int:
     return len(expired)
 
 # ============================================================================
-# Helper Function
+# Helper Functions
 # ============================================================================
 def _before_today(start_date:str, today: datetime) -> bool:
     try:
@@ -109,3 +116,16 @@ def get_new_hackathons() -> list[dict]:
     rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
     connection.close()
     return rows
+
+def mark_all_seen() -> int:
+    """
+    Set is_new=0 for all events. Returns the number of rows updated.
+    This happens every morning before the scraping run.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    cursor.execute("UPDATE events SET is_new = 0 WHERE is_new = 1")
+    updated = cursor.rowcount
+    connection.commit()
+    connection.close()
+    return updated

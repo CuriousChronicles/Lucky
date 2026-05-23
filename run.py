@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from database import remove_expired_events
+from database import mark_all_seen, remove_expired_events
 from devpost_scraper import scrape_devpost
 from notifier import send_notification
 
@@ -65,10 +65,11 @@ def run_all():
 
     log.info("=" * 60)
     log.info(f"Lucky run started - {run_start:%Y-%m-%d %H:%M:%S}")
+    seen_count = mark_all_seen()
+    log.info(f"Marked {seen_count} existing event(s) as seen")
 
-    log.info("[database] Checking for expired events...")
-    count = remove_expired_events()
-    log.info(F"  {count} event{'s' if count != 1 else ''} {"was" if count == 1 else "were"} removed")
+    # TODO: Remove the expired events if it has surpassed the start date
+    # Need to make sure it doesn't get overridden by the scrappers
 
     results = []
 
