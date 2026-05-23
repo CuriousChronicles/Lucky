@@ -41,8 +41,17 @@ def create_tables():
 def upsert_hackathon(data: list[dict]) -> int:
     """Insert new events (is_new=1) or refresh metadata for existing ones (is_new unchanged).
     Returns the number of genuinely new events inserted."""
+    expired_urls = [
+        row["url"] for row in data
+        if row.get("url") and is_expired_start_date(row.get("start_date"))
+    ]
+    data = [row for row in data if not is_expired_start_date(row.get("start_date"))]
+
     connection = get_connection()
     cursor = connection.cursor()
+
+    if expired_urls:
+        cursor.executemany("DELETE FROM events WHERE url = ?", [(u,) for u in expired_urls])
 
     incoming_urls = [row["url"] for row in data if row.get("url")]
     if incoming_urls:
@@ -78,9 +87,6 @@ def upsert_hackathon(data: list[dict]) -> int:
 
 def remove_expired_events() -> int:
     "Remove events whose start date has already passed. The function removes the number of events removed"
-    today = datetime.today().replace(hour=0, minute=0, second=0, microsecond=0)
-    print(today)
-
     connection = get_connection()
     cursor = connection.cursor()
     cursor.execute("SELECT url, start_date FROM events")
@@ -88,7 +94,7 @@ def remove_expired_events() -> int:
 
     expired = [
         url for url, start_date in rows
-        if start_date and _before_today(start_date, today)
+        if is_expired_start_date(start_date)
     ]
 
     if expired:
@@ -101,6 +107,17 @@ def remove_expired_events() -> int:
 # ============================================================================
 # Helper Functions
 # ============================================================================
+def is_expired_start_date(start_date: str | None, today: datetime | None = None) -> bool:
+    """Return True when start_date is before today."""
+    if not start_date:
+        return False
+
+    if today is None:
+        today = datetime.today()
+
+    today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    return _before_today(start_date, today)
+
 def _before_today(start_date:str, today: datetime) -> bool:
     try:
         return datetime.strptime(start_date, "%d/%m/%Y") < today

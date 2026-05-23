@@ -10,6 +10,7 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import pandas as pd
+from database import is_expired_start_date
 
 URL = "https://devpost.com/hackathons?challenge_type[]=online&status[]=upcoming"
 
@@ -110,12 +111,8 @@ def parse_hackathons(html) -> dict:
 
         start_date, deadline = parse_date_range(date_el.text if date_el else None)
 
-        if start_date:
-            try:
-                if datetime.strptime(start_date, "%d/%m/%Y") < datetime.today():
-                    continue
-            except ValueError:
-                pass
+        if is_expired_start_date(start_date):
+            continue
 
         hackathons.append({
             "url": link_el.get("href") if link_el else None,
@@ -131,7 +128,7 @@ def parse_hackathons(html) -> dict:
     return hackathons
 
 def scrape_devpost() -> dict:
-    from database import upsert_hackathon, remove_expired_events
+    from database import upsert_hackathon
 
     print("Fetching page ...")
     html = fetch_rendered_html(URL)

@@ -68,8 +68,8 @@ def run_all():
     seen_count = mark_all_seen()
     log.info(f"Marked {seen_count} existing event(s) as seen")
 
-    # TODO: Remove the expired events if it has surpassed the start date
-    # Need to make sure it doesn't get overridden by the scrappers
+    expired_count = remove_expired_events()
+    log.info(f"Removed {expired_count} expired event(s)")
 
     results = []
 
