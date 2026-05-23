@@ -129,7 +129,7 @@ python scheduler.py
 - [ ] Filter IEEE scraper to event sign-ups only
 - [ ] Add Eventbrite / Meetup scrapers (Auckland events)
 - [ ] Scrape university tech club Instagram pages (SESA, WDCC, GDCC, StartUp Club)
-- [ ] Deduplicate new vs. already-seen events in the database
+- [x] Deduplicate new vs. already-seen events in the database
 - [x] Strip events where the start date has already passed
 
 ### Phase 2 — Smarter Notifications
