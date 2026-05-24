@@ -156,6 +156,21 @@ class TestScoreEventMocked:
             mock_client.return_value.models.generate_content.return_value = self._mock_response(payload)
             result = score_event({"title": "Test Event"})
         assert result["score"] == 0
+        assert result["status"] == "parse_error"
+
+    def test_rate_limit_retries_then_returns_status(self):
+        class RateLimitError(Exception):
+            status_code = 429
+
+        with patch("llm_client._get_client") as mock_client, \
+             patch("llm_client._load_profile", return_value="test profile"), \
+             patch("llm_client.time.sleep") as mock_sleep:
+            mock_client.return_value.models.generate_content.side_effect = RateLimitError("too many requests")
+            result = score_event({"title": "Test Event"})
+
+        assert result["score"] == 0
+        assert result["status"] == "rate_limited"
+        assert mock_sleep.call_count == 3
 
 
 # ---------------------------------------------------------------------------

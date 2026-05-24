@@ -32,6 +32,7 @@ def create_tables():
             themes TEXT,
             relevance_score INTEGER,
             relevance_reasoning TEXT,
+            score_status TEXT,
             is_new INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -51,6 +52,32 @@ def migrate_events_table(cursor):
     if "relevance_reasoning" not in columns:
         cursor.execute("ALTER TABLE events ADD COLUMN relevance_reasoning TEXT")
 
+    if "score_status" not in columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN score_status TEXT")
+
+    cursor.execute(
+        """
+        UPDATE events
+        SET relevance_score = NULL,
+            score_status = CASE
+                WHEN lower(COALESCE(relevance_reasoning, '')) LIKE '%429%'
+                  OR lower(COALESCE(relevance_reasoning, '')) LIKE '%rate limit%'
+                  OR lower(COALESCE(relevance_reasoning, '')) LIKE '%resource_exhausted%'
+                THEN 'rate_limited'
+                ELSE 'api_error'
+            END
+        WHERE relevance_score = 0
+        """
+    )
+    cursor.execute(
+        """
+        UPDATE events
+        SET score_status = 'ok'
+        WHERE relevance_score IS NOT NULL
+          AND score_status IS NULL
+        """
+    )
+
 def upsert_hackathon(data: list[dict]) -> int:
     """Insert new events (is_new=1) or refresh metadata for existing ones (is_new unchanged).
     Returns the number of genuinely new events inserted."""
@@ -62,6 +89,7 @@ def upsert_hackathon(data: list[dict]) -> int:
 
     connection = get_connection()
     cursor = connection.cursor()
+    migrate_events_table(cursor)
 
     if expired_urls:
         cursor.executemany("DELETE FROM events WHERE url = ?", [(u,) for u in expired_urls])
@@ -81,14 +109,15 @@ def upsert_hackathon(data: list[dict]) -> int:
             **row,
             "relevance_score": row.get("relevance_score"),
             "relevance_reasoning": row.get("relevance_reasoning"),
+            "score_status": row.get("score_status"),
             "is_new": 0 if row.get("url") in existing_urls else 1,
         }
         for row in data
     ]
 
     cursor.executemany("""
-        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes, relevance_score, relevance_reasoning, is_new)
-        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes, :relevance_score, :relevance_reasoning, :is_new)
+        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes, relevance_score, relevance_reasoning, score_status, is_new)
+        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes, :relevance_score, :relevance_reasoning, :score_status, :is_new)
         ON CONFLICT(url) DO UPDATE SET
             title      = excluded.title,
             event_type = excluded.event_type,
@@ -97,13 +126,42 @@ def upsert_hackathon(data: list[dict]) -> int:
             start_date = excluded.start_date,
             location   = excluded.location,
             themes     = excluded.themes, 
-            relevance_score     = excluded.relevance_score,
-            relevance_reasoning = excluded.relevance_reasoning
+            relevance_score     = COALESCE(excluded.relevance_score, events.relevance_score),
+            relevance_reasoning = COALESCE(excluded.relevance_reasoning, events.relevance_reasoning),
+            score_status        = COALESCE(excluded.score_status, events.score_status)
     """, rows)
 
     connection.commit()
     connection.close()
     return new_count
+
+def get_unscored_events() -> list[dict]:
+    """Return events that have not been scored yet."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    migrate_events_table(cursor)
+    connection.commit()
+    cursor.execute("SELECT * FROM events WHERE relevance_score IS NULL")
+    columns = [col[0] for col in cursor.description]
+    rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    connection.close()
+    return rows
+
+def update_event_score(url: str, score: int | None, reasoning: str, status: str) -> None:
+    """Persist a relevance score for one event."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    migrate_events_table(cursor)
+    cursor.execute(
+        """
+        UPDATE events
+        SET relevance_score = ?, relevance_reasoning = ?, score_status = ?
+        WHERE url = ?
+        """,
+        (score, reasoning, status, url),
+    )
+    connection.commit()
+    connection.close()
 
 def remove_expired_events() -> int:
     "Remove events whose start date has already passed. The function removes the number of events removed"

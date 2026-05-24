@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from google.genai import types
 MODEL = "gemini-2.5-flash"
 BASE_DIR = Path(__file__).parent
 PROFILE_PATH = BASE_DIR / "profile.md"
+RATE_LIMIT_BACKOFF_SECONDS = (2, 4, 8)
 
 
 @lru_cache(maxsize=1)
@@ -69,16 +71,47 @@ def _validate_result(result: dict) -> dict:
     return {"score": score, "reasoning": reasoning}
 
 
+def _is_rate_limit_error(error: Exception) -> bool:
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    if status == 429:
+        return True
+
+    message = str(error).lower()
+    return "429" in message or "rate limit" in message or "resource_exhausted" in message
+
+
+def _failure_result(status: str, error: Exception) -> dict:
+    return {
+        "score": 0,
+        "reasoning": f"scoring failed: {error}",
+        "status": status,
+    }
+
+
 def score_event(event: dict) -> dict:
     """Score an event for relevance. Never raises for LLM/API failures."""
     try:
         profile = _load_profile()
         client = _get_client()
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=_build_prompt(profile, event),
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        return _validate_result(json.loads(response.text))
+        prompt = _build_prompt(profile, event)
     except Exception as error:
-        return {"score": 0, "reasoning": f"scoring failed: {error}"}
+        return _failure_result("api_error", error)
+
+    for attempt in range(len(RATE_LIMIT_BACKOFF_SECONDS) + 1):
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+            return {**_validate_result(json.loads(response.text)), "status": "ok"}
+        except (json.JSONDecodeError, ValueError) as error:
+            return _failure_result("parse_error", error)
+        except Exception as error:
+            if not _is_rate_limit_error(error):
+                return _failure_result("api_error", error)
+
+            if attempt == len(RATE_LIMIT_BACKOFF_SECONDS):
+                return _failure_result("rate_limited", error)
+
+            time.sleep(RATE_LIMIT_BACKOFF_SECONDS[attempt])
