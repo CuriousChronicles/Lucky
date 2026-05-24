@@ -30,13 +30,26 @@ def create_tables():
             start_date TEXT,
             location TEXT,
             themes TEXT,
+            relevance_score INTEGER,
+            relevance_reasoning TEXT,
             is_new INTEGER NOT NULL DEFAULT 0
         )
     """)
+    migrate_events_table(cursor)
 
     connection.commit()
     connection.close()
     print("Database tables created successfully.")
+
+def migrate_events_table(cursor):
+    cursor.execute("PRAGMA table_info(events)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    if "relevance_score" not in columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN relevance_score INTEGER")
+
+    if "relevance_reasoning" not in columns:
+        cursor.execute("ALTER TABLE events ADD COLUMN relevance_reasoning TEXT")
 
 def upsert_hackathon(data: list[dict]) -> int:
     """Insert new events (is_new=1) or refresh metadata for existing ones (is_new unchanged).
@@ -64,13 +77,18 @@ def upsert_hackathon(data: list[dict]) -> int:
     new_count = sum(1 for url in incoming_urls if url not in existing_urls)
 
     rows = [
-        {**row, "is_new": 0 if row.get("url") in existing_urls else 1}
+        {
+            **row,
+            "relevance_score": row.get("relevance_score"),
+            "relevance_reasoning": row.get("relevance_reasoning"),
+            "is_new": 0 if row.get("url") in existing_urls else 1,
+        }
         for row in data
     ]
 
     cursor.executemany("""
-        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes, is_new)
-        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes, :is_new)
+        INSERT INTO events (url, title, event_type, source, deadline, start_date, location, themes, relevance_score, relevance_reasoning, is_new)
+        VALUES (:url, :title, :event_type, :source, :deadline, :start_date, :location, :themes, :relevance_score, :relevance_reasoning, :is_new)
         ON CONFLICT(url) DO UPDATE SET
             title      = excluded.title,
             event_type = excluded.event_type,
@@ -78,7 +96,9 @@ def upsert_hackathon(data: list[dict]) -> int:
             deadline   = excluded.deadline,
             start_date = excluded.start_date,
             location   = excluded.location,
-            themes     = excluded.themes
+            themes     = excluded.themes, 
+            relevance_score     = excluded.relevance_score,
+            relevance_reasoning = excluded.relevance_reasoning
     """, rows)
 
     connection.commit()
